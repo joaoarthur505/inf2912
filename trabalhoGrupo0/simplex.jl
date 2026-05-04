@@ -20,6 +20,7 @@ module SimplexMethod
     return length( z[ z .> 0] ) == 0
   end
 
+  # UNICA MUDANCA PRA ENTRAGA DO TRABALHO
   function initial_BFS(A, b)
     m, n = size(A)
 
@@ -38,7 +39,8 @@ module SimplexMethod
 
     return b_idx, x_B, B
   end
-
+  # FIM DAS MUDANCAS 
+  
   function print_tableau(t::SimplexTableau)
     m, n = size(t.Y)
 
