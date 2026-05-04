@@ -2,12 +2,11 @@ using JuMP
 using HiGHS
 
 P = [1,2]
-R = [1,2]
 
-v = [3, 1]
-d = [6, 9]
+v = [3, 2]
+d = [6, 8]
 c = [
-    2 1
+    2 2
     1 3
 ]
 
@@ -26,7 +25,11 @@ println(model)
 set_silent(model)
 optimize!(model)
 
-println("z = ", objective_value(model))
-for j in P
-    println("x[$j] = ", value(x[j]))
+println(termination_status(model))
+
+if termination_status(model) == OPTIMAL
+    println("z = ", objective_value(model))
+    for j in P
+        println("x[$j] = ", value(x[j]))
+    end
 end

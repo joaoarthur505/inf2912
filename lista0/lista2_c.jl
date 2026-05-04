@@ -4,11 +4,11 @@ using HiGHS
 P = [1,2]
 R = [1,2]
 
-v = [1, 1]
-d = [4, 5]
+v = [4, 1]
+d = [16, 12]
 c = [
-    1 1
-    1 -1
+    8 2
+    5 2
 ]
 
 model = Model(HiGHS.Optimizer) 
@@ -27,7 +27,10 @@ set_silent(model)
 optimize!(model)
 
 println(termination_status(model))
-println("z = ", objective_value(model))
-for j in P
-    println("x[$j] = ", value(x[j]))
+
+if termination_status(model) == OPTIMAL
+    println("z = ", objective_value(model))
+    for j in P
+        println("x[$j] = ", value(x[j]))
+    end
 end
