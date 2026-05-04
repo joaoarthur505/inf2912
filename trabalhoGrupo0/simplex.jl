@@ -1,6 +1,6 @@
 module SimplexMethod
 
-  using LinearAlgebra, Combinatorics, Printf
+  using LinearAlgebra, Printf
 
   export simplex_method
 
@@ -23,17 +23,20 @@ module SimplexMethod
   function initial_BFS(A, b)
     m, n = size(A)
 
-    comb = collect(combinations(1:n, m))
-    for i in length(comb):-1:1
-      b_idx = comb[i]
-      B = A[:, b_idx]
-      x_B = inv(B) * b
-      if is_nonnegative(x_B)
-        return b_idx, x_B, B
-      end
+    if !is_nonnegative(b)
+      error("b possui entrada negativa.")
     end
 
-    error("Infeasible")
+    if n < m || A[:, n-m+1:n] != Matrix{Float64}(I, m, m)
+      error("As ultimas colunas de A ser a identidade.")
+    end
+
+    b_idx = collect(n-m+1:n)
+
+    B = Matrix{Float64}(I, m, m)
+    x_B = copy(b)
+
+    return b_idx, x_B, B
   end
 
   function print_tableau(t::SimplexTableau)

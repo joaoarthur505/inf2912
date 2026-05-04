@@ -1,4 +1,4 @@
-module SimplexMethod
+module BookMethod
 
   using LinearAlgebra, Combinatorics, Printf
 
