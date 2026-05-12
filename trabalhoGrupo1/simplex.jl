@@ -103,11 +103,8 @@ module SimplexMethod
     println(hline)
   end
 
-  function pivoting!(t::SimplexTableau)
+  function pivot_at!(t::SimplexTableau, entering::Int, exiting::Int)
     m, n = size(t.Y)
-
-    entering, exiting = pivot_point(t)
-    println("Pivoting: entering = x_$entering, exiting = x_$(t.b_idx[exiting])")
 
     # Pivoting: exiting-row, entering-column
     # updating exiting-row
@@ -129,6 +126,12 @@ module SimplexMethod
 
     # Updating b_idx
     t.b_idx[ findfirst(t.b_idx .== t.b_idx[exiting]) ] = entering
+  end
+
+  function pivoting!(t::SimplexTableau)
+    entering, exiting = pivot_point(t)
+    println("Pivoting: entering = x_$entering, exiting = x_$(t.b_idx[exiting])")
+    pivot_at!(t, entering, exiting)
   end
 
   function pivot_point(t::SimplexTableau)
@@ -209,24 +212,10 @@ module SimplexMethod
     for i in 1:m
       if tableau.b_idx[i] in art_idx
         nonbasic_no_art = setdiff(setdiff(1:total, tableau.b_idx), art_idx)
-        for j in nonbasic_no_art
-          if abs(tableau.Y[i, j]) > 1e-9
-            println("Removing degenerate artificial: entering = x_$j, exiting = x_$(tableau.b_idx[i])")
-            # manual pivot on row i, col j (pivoting! would call pivot_point which uses z_c)
-            coef = tableau.Y[i, j]
-            tableau.Y[i, :] /= coef
-            tableau.x_B[i]  /= coef
-            for k in setdiff(1:m, i)
-              c2 = tableau.Y[k, j]
-              tableau.Y[k, :] -= c2 * tableau.Y[i, :]
-              tableau.x_B[k]  -= c2 * tableau.x_B[i]
-            end
-            coef = tableau.z_c[j]
-            tableau.z_c -= coef * tableau.Y[i, :]'
-            tableau.obj  -= coef * tableau.x_B[i]
-            tableau.b_idx[i] = j
-            break
-          end
+        j = findfirst(j -> abs(tableau.Y[i, j]) > 1e-9, nonbasic_no_art)
+        if j !== nothing
+          println("Removing degenerate artificial: entering = x_$(nonbasic_no_art[j]), exiting = x_$(tableau.b_idx[i])")
+          pivot_at!(tableau, nonbasic_no_art[j], i)
         end
       end
     end
