@@ -20,59 +20,26 @@ module SimplexMethod
     return length( z[ z .> 0] ) == 0
   end
 
-  # Converts (A, b, signs) to standard form by adding slack/surplus/artificial variables.
-  # signs: vector of :le (<=), :ge (>=), or :eq (=) for each constraint.
-  # Returns the extended (A, b, initial basis, artificial column indices).
-  function setup_problem(A, b, signs)
+  # UNICA MUDANCA PRA ENTREGA DO TRABALHO
+  function initial_BFS(A, b)
     m, n = size(A)
-    A = Array{Float64}(copy(A))
-    b = Array{Float64}(copy(b))
-    signs = copy(signs)
 
-    # Force b >= 0 by flipping rows where b[i] < 0 (and reversing the sign).
-    for i in 1:m
-      if b[i] < 0
-        A[i, :] *= -1
-        b[i]    *= -1
-        signs[i] = signs[i] === :le ? :ge :
-                   signs[i] === :ge ? :le : :eq
-      end
+    if !is_nonnegative(b)
+      error("b possui entrada negativa.")
     end
 
-    n_slack = count(s -> s === :le || s === :ge, signs)
-    n_art   = count(s -> s === :ge || s === :eq, signs)
-    total   = n + n_slack + n_art
-
-    A_ext = zeros(m, total)
-    A_ext[:, 1:n] = A
-
-    b_idx   = zeros(Int, m)
-    art_idx = Int[]
-    col_s   = n
-    col_a   = n + n_slack
-
-    for i in 1:m
-      if signs[i] === :le            # slack +1
-        col_s += 1
-        A_ext[i, col_s] = 1.0
-        b_idx[i] = col_s
-      elseif signs[i] === :ge        # surplus -1 + artificial +1
-        col_s += 1
-        A_ext[i, col_s] = -1.0
-        col_a += 1
-        A_ext[i, col_a] = 1.0
-        b_idx[i] = col_a
-        push!(art_idx, col_a)
-      else                           # :eq → artificial +1
-        col_a += 1
-        A_ext[i, col_a] = 1.0
-        b_idx[i] = col_a
-        push!(art_idx, col_a)
-      end
+    if n < m || A[:, n-m+1:n] != Matrix{Float64}(I, m, m)
+      error("As ultimas colunas de A ser a identidade.")
     end
 
-    return A_ext, b, b_idx, art_idx
+    b_idx = collect(n-m+1:n)
+
+    B = Matrix{Float64}(I, m, m)
+    x_B = copy(b)
+
+    return b_idx, x_B, B
   end
+  # FIM DAS MUDANCAS 
 
   function print_tableau(t::SimplexTableau)
     m, n = size(t.Y)
@@ -148,52 +115,34 @@ module SimplexMethod
     return entering, exiting
   end
 
-  function initialize(c, A, b, b_idx)
+  function initialize(c, A, b)
     c = Array{Float64}(c)
     A = Array{Float64}(A)
     b = Array{Float64}(b)
 
     m, n = size(A)
 
-    B    = A[:, b_idx]
-    Y    = inv(B) * A
-    x_B  = inv(B) * b
-    c_B  = c[b_idx]
-    obj  = dot(c_B, x_B)
+    # Finding an initial BFS
+    b_idx, x_B, B = initial_BFS(A,b)
+
+    Y = inv(B) * A
+    c_B = c[b_idx]
+    obj = dot(c_B, x_B)
 
     # z_c is a row vector
-    z_c = zeros(1, n)
-    for j in 1:n
-      z_c[1, j] = dot(c_B, Y[:, j]) - c[j]
-    end
+    z_c = zeros(1,n)
+    n_idx = setdiff(1:n, b_idx)
+    z_c[n_idx] = c_B' * inv(B) * A[:,n_idx] - c[n_idx]'
 
-    return SimplexTableau(z_c, Y, x_B, obj, copy(b_idx))
+    return SimplexTableau(z_c, Y, x_B, obj, b_idx)
   end
 
   function is_optimal(t::SimplexTableau)
     return is_nonpositive(t.z_c)
   end
 
-  function simplex_method(c, A, b, signs)
-    c_orig = Array{Float64}(c)
-
-    A_ext, b_std, b_idx, art_idx = setup_problem(A, b, signs)
-    n_orig = length(c_orig)
-    total  = size(A_ext, 2)
-    m      = size(A_ext, 1)
-
-    # Phase 1: minimize sum of artificial variables
-    println(repeat("=", 60))
-    println("Phase 1")
-    println(repeat("=", 60))
-
-    c_p1 = zeros(total)
-    c_p1[art_idx] .= 1.0
-
-    c_ext = zeros(total)
-    c_ext[1:n_orig] = c_orig
-
-    tableau = initialize(c_p1, A_ext, b_std, b_idx)
+  function simplex_method(c, A, b)
+    tableau = initialize(c, A, b)
     print_tableau(tableau)
 
     while !is_optimal(tableau)
@@ -201,67 +150,10 @@ module SimplexMethod
       print_tableau(tableau)
     end
 
-    if tableau.obj > 1e-6
-      error("Infeasible: sum of artificials = $(tableau.obj) > 0")
-    end
+    opt_x = zeros(length(c))
+    opt_x[tableau.b_idx] = tableau.x_B
 
-    # Drive out any artificial that stayed basic at value 0 (degeneracy).
-    for i in 1:m
-      if tableau.b_idx[i] in art_idx
-        nonbasic_no_art = setdiff(setdiff(1:total, tableau.b_idx), art_idx)
-        for j in nonbasic_no_art
-          if abs(tableau.Y[i, j]) > 1e-9
-            println("Removing degenerate artificial: entering = x_$j, exiting = x_$(tableau.b_idx[i])")
-            # manual pivot on row i, col j (pivoting! would call pivot_point which uses z_c)
-            coef = tableau.Y[i, j]
-            tableau.Y[i, :] /= coef
-            tableau.x_B[i]  /= coef
-            for k in setdiff(1:m, i)
-              c2 = tableau.Y[k, j]
-              tableau.Y[k, :] -= c2 * tableau.Y[i, :]
-              tableau.x_B[k]  -= c2 * tableau.x_B[i]
-            end
-            coef = tableau.z_c[j]
-            tableau.z_c -= coef * tableau.Y[i, :]'
-            tableau.obj  -= coef * tableau.x_B[i]
-            tableau.b_idx[i] = j
-            break
-          end
-        end
-      end
-    end
-
-    # Drop rows where an artificial is still basic (redundant constraints).
-    rows_keep = [i for i in 1:m if !(tableau.b_idx[i] in art_idx)]
-
-    # Phase 2: drop artificial columns and optimize the original objective.
-    println(repeat("=", 60))
-    println("Phase 2")
-    println(repeat("=", 60))
-
-    non_art  = setdiff(1:total, art_idx)
-    col_map  = Dict(old => new for (new, old) in enumerate(non_art))
-    A_p2     = A_ext[rows_keep, non_art]
-    b_p2     = b_std[rows_keep]
-    c_p2     = c_ext[non_art]
-    b_idx_p2 = [col_map[tableau.b_idx[i]] for i in rows_keep]
-
-    tableau2 = initialize(c_p2, A_p2, b_p2, b_idx_p2)
-    print_tableau(tableau2)
-
-    while !is_optimal(tableau2)
-      pivoting!(tableau2)
-      print_tableau(tableau2)
-    end
-
-    opt_x = zeros(n_orig)
-    for i in 1:length(tableau2.b_idx)
-      if tableau2.b_idx[i] <= n_orig
-        opt_x[tableau2.b_idx[i]] = tableau2.x_B[i]
-      end
-    end
-
-    return opt_x, tableau2.obj
+    return opt_x, tableau.obj
   end
 
 end
