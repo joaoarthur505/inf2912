@@ -20,16 +20,14 @@ module SimplexMethod
     return length( z[ z .> 0] ) == 0
   end
 
-  # Converts (A, b, signs) to standard form by adding slack/surplus/artificial variables.
-  # signs: vector of :le (<=), :ge (>=), or :eq (=) for each constraint.
-  # Returns the extended (A, b, initial basis, artificial column indices).
+  # signs: cada elemento é um dos seguintes: :le (<=), :ge (>=) ou :eq (=)
   function setup_problem(A, b, signs)
     m, n = size(A)
     A = Array{Float64}(copy(A))
     b = Array{Float64}(copy(b))
     signs = copy(signs)
 
-    # Force b >= 0 by flipping rows where b[i] < 0 (and reversing the sign).
+    # Se b[i] < 0 multiplica a linha toda por -1
     for i in 1:m
       if b[i] < 0
         A[i, :] *= -1
@@ -52,18 +50,18 @@ module SimplexMethod
     col_a   = n + n_slack
 
     for i in 1:m
-      if signs[i] === :le            # slack +1
+      if signs[i] === :le            
         col_s += 1
         A_ext[i, col_s] = 1.0
         b_idx[i] = col_s
-      elseif signs[i] === :ge        # surplus -1 + artificial +1
+      elseif signs[i] === :ge       
         col_s += 1
         A_ext[i, col_s] = -1.0
         col_a += 1
         A_ext[i, col_a] = 1.0
         b_idx[i] = col_a
         push!(art_idx, col_a)
-      else                           # :eq → artificial +1
+      else                           
         col_a += 1
         A_ext[i, col_a] = 1.0
         b_idx[i] = col_a
@@ -106,25 +104,20 @@ module SimplexMethod
   function pivot_at!(t::SimplexTableau, entering::Int, exiting::Int)
     m, n = size(t.Y)
 
-    # Pivoting: exiting-row, entering-column
-    # updating exiting-row
     coef = t.Y[exiting, entering]
     t.Y[exiting, :] /= coef
     t.x_B[exiting] /= coef
 
-    # updating other rows of Y
     for i in setdiff(1:m, exiting)
       coef = t.Y[i, entering]
       t.Y[i, :] -= coef * t.Y[exiting, :]
       t.x_B[i] -= coef * t.x_B[exiting]
     end
 
-    # updating the row for the reduced costs
     coef = t.z_c[entering]
     t.z_c -= coef * t.Y[exiting, :]'
     t.obj -= coef * t.x_B[exiting]
 
-    # Updating b_idx
     t.b_idx[ findfirst(t.b_idx .== t.b_idx[exiting]) ] = entering
   end
 
@@ -135,13 +128,11 @@ module SimplexMethod
   end
 
   function pivot_point(t::SimplexTableau)
-    # Finding the entering variable index
     entering = findfirst( t.z_c .> 0)[2]
     if entering == 0
       error("Optimal")
     end
 
-    # min ratio test / finding the exiting variable index
     pos_idx = findall( t.Y[:, entering] .> 0 )
     if length(pos_idx) == 0
       error("Unbounded")
@@ -178,6 +169,7 @@ module SimplexMethod
   end
 
   function simplex_method(c, A, b, signs)
+    # OBS: sempre minimiza
     c_orig = Array{Float64}(c)
 
     A_ext, b_std, b_idx, art_idx = setup_problem(A, b, signs)
@@ -185,7 +177,7 @@ module SimplexMethod
     total  = size(A_ext, 2)
     m      = size(A_ext, 1)
 
-    # Phase 1: minimize sum of artificial variables
+    # Fase 1
     println(repeat("=", 60))
     println("Phase 1")
     println(repeat("=", 60))
@@ -208,22 +200,22 @@ module SimplexMethod
       error("Infeasible: sum of artificials = $(tableau.obj) > 0")
     end
 
-    # Drive out any artificial that stayed basic at value 0 (degeneracy).
+    # lidar com o caso em que uma variavel artificial acaba como básica mas seu valor é zero
     for i in 1:m
       if tableau.b_idx[i] in art_idx
         nonbasic_no_art = setdiff(setdiff(1:total, tableau.b_idx), art_idx)
         j = findfirst(j -> abs(tableau.Y[i, j]) > 1e-9, nonbasic_no_art)
         if j !== nothing
-          println("Removing degenerate artificial: entering = x_$(nonbasic_no_art[j]), exiting = x_$(tableau.b_idx[i])")
           pivot_at!(tableau, nonbasic_no_art[j], i)
         end
       end
     end
 
-    # Drop rows where an artificial is still basic (redundant constraints).
     rows_keep = [i for i in 1:m if !(tableau.b_idx[i] in art_idx)]
+    # fim da tratação de caso
 
-    # Phase 2: drop artificial columns and optimize the original objective.
+    # Fase 2
+    #OBS: sempre minimiza
     println(repeat("=", 60))
     println("Phase 2")
     println(repeat("=", 60))

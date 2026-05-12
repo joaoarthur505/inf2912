@@ -48,3 +48,4 @@ println("="^60)
 x2, z2 = simplex_method(c2, A2, b2, signs2)
 println("\nx* = ", x2)
 println("z* = ", z2)
+
