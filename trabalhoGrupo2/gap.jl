@@ -1,23 +1,29 @@
 using AssignmentProblems
 using JuMP
-using HiGHS      
+using HiGHS
 using CSV
 using DataFrames
 using Dates
+using Printf
 
-const TIME_LIMIT = 300.0 
+const TIME_LIMIT = 10.0 
 
-function solve_gap(data::AssignmentProblem, time_limit::Float64)
+function solve_gap(data::AssignmentProblem, time_limit::Float64; sense=:Min)
     m = na(data)   # numero de agentes
     n = nj(data)   # numero de jobs
 
     model = Model(HiGHS.Optimizer)
     set_silent(model)
     set_time_limit_sec(model, time_limit)
- 
+
     @variable(model, x[1:m, 1:n], Bin)
 
-    @objective(model, Min, sum(data.costs[i, j] * x[i, j] for i in 1:m, j in 1:n))
+    obj_expr = @expression(model, sum(data.costs[i, j] * x[i, j] for i in 1:m, j in 1:n))
+    if sense == :Min
+        @objective(model, Min, obj_expr)
+    else
+        @objective(model, Max, obj_expr)
+    end
     
     # restrições 
     for i in 1:n
@@ -45,14 +51,14 @@ function solve_gap(data::AssignmentProblem, time_limit::Float64)
     end
 end
 
-function relative_gap(obj, lit_ub)
-    if !isfinite(obj) || lit_ub == typemax(Int64) || lit_ub == 0
-        return NaN
-    end
-    return (obj - lit_ub) / abs(lit_ub) * 100.0
+function relative_gap(obj, lit_lb, lit_ub, sense::Symbol)
+    ref = sense == :Min ? lit_ub : lit_lb
+    return (obj - ref) / abs(ref) * 100.0
 end
 
 const INSTANCES = [
+    :d05100, :d05200,
+    :d10100, :d10200,
     :a05100, :a05200,
     :a10100, :a10200,
     :a20100, :a20200,
@@ -61,8 +67,6 @@ const INSTANCES = [
     :b20100, :b20200,
     :c05100, :c05200,
     :c10100, :c10200,
-    :d05100, :d05200,
-    :d10100, :d10200,
     :e05100, :e05200,
     :e10100, :e10200,
 ]
@@ -71,29 +75,29 @@ results = DataFrame(
     instance   = String[],
     n_agents   = Int[],
     n_jobs     = Int[],
+    sense      = String[],
     status     = String[],
     objective  = Float64[],
     lit_lb     = Float64[],
     lit_ub     = Float64[],
-    gap_pct    = Float64[],  
+    gap_pct    = Float64[],
     time_s     = Float64[],
 )
 
-for inst in INSTANCES
-    data = loadAssignmentProblem(inst)
-
-    println("Resolvendo $(data.name)")
+for inst in INSTANCES, sense in (:Min, :Max)
+    data = loadAssignmentProblem(inst, sense)
 
     t0 = time()
-    status, obj = solve_gap(data, TIME_LIMIT)
+    status, obj = solve_gap(data, TIME_LIMIT; sense=sense)
     elapsed = time() - t0
 
-    gap = relative_gap(obj, data.ub)
+    gap = relative_gap(obj, data.lb, data.ub, sense)
 
     push!(results, (
         string(data.name),
         na(data),
         nj(data),
+        string(sense),
         string(status),
         isfinite(obj) ? obj : NaN,
         Float64(data.lb == typemin(Int64) ? NaN : data.lb),
@@ -102,7 +106,7 @@ for inst in INSTANCES
         elapsed,
     ))
 
-    @printf " status=%-10s  obj=%-10.1f  gap=%6.2f%%  t=%.1fs\n" status obj gap elapsed
+    @printf "%-10s  %-3s  status=%-10s  obj=%-10.1f  gap=%6.2f%%  t=%.1fs\n" data.name sense status obj gap elapsed
 end
 
 out_file = joinpath(@__DIR__, "resultados_gap.csv")
