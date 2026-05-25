@@ -1,71 +1,51 @@
 using AssignmentProblems
 using JuMP
-using HiGHS       # troca pelo solver que vocês usarem (CPLEX, Gurobi, etc.)
+using HiGHS      
 using CSV
 using DataFrames
 using Dates
 
-const TIME_LIMIT = 300.0  # segundos por instância
+const TIME_LIMIT = 300.0 
 
-# ──────────────────────────────────────────────────────────────
-# TODO: preencha aqui o modelo MIP de vocês
-# Recebe um AssignmentProblem, retorna (status, obj_value, bound)
-#   status  → :Optimal | :Feasible | :Infeasible | :Other
-#   obj     → melhor valor inteiro encontrado (Inf se nenhum)
-#   bound   → melhor bound dual do solver (para calcular gap interno)
-# ──────────────────────────────────────────────────────────────
 function solve_gap(data::AssignmentProblem, time_limit::Float64)
-    m = na(data)   # número de agentes
-    n = nj(data)   # número de jobs
+    m = na(data)   # numero de agentes
+    n = nj(data)   # numero de jobs
 
     model = Model(HiGHS.Optimizer)
     set_silent(model)
     set_time_limit_sec(model, time_limit)
-
-    # --- variáveis ---
+ 
     @variable(model, x[1:m, 1:n], Bin)
 
-    # --- objetivo (minimização) ---
     @objective(model, Min, sum(data.costs[i, j] * x[i, j] for i in 1:m, j in 1:n))
 
-    # --- restrições ---
-    # TODO: adicione aqui as restrições do GAP
+    # restrições 
 
     optimize!(model)
 
     st = termination_status(model)
     has_primal = primal_status(model) == MOI.FEASIBLE_POINT
 
-    obj   = has_primal ? objective_value(model)   : Inf
-    bound = has_dual_status(model) ? dual_objective_value(model) : -Inf
+    obj = has_primal ? objective_value(model) : Inf
 
     if st == MOI.OPTIMAL
-        return :Optimal, obj, bound
+        return :Optimal, obj
     elseif has_primal
-        return :Feasible, obj, bound
+        return :Feasible, obj
     elseif st == MOI.INFEASIBLE
-        return :Infeasible, Inf, Inf
+        return :Infeasible, Inf
     else
-        return :Other, Inf, Inf
+        return :Other, Inf
     end
 end
 
-# ──────────────────────────────────────────────────────────────
-# Gap relativo (%) usando o bound dual do solver (mais preciso)
-# Fallback para lb da literatura se o solver não tiver bound.
-# ──────────────────────────────────────────────────────────────
-function relative_gap(obj, solver_bound, lit_lb)
-    # Usa bound do próprio solver quando disponível
-    lb = isfinite(solver_bound) ? solver_bound : lit_lb
-    if !isfinite(obj) || !isfinite(lb) || lb == 0
+function relative_gap(obj, lit_ub)
+    if !isfinite(obj) || lit_ub == typemax(Int64) || lit_ub == 0
         return NaN
     end
-    return (obj - lb) / abs(lb) * 100.0
+    return (obj - lit_ub) / abs(lit_ub) * 100.0
 end
 
-# ──────────────────────────────────────────────────────────────
-# Instâncias que queremos rodar — edite à vontade
-# ──────────────────────────────────────────────────────────────
 const INSTANCES = [
     :a05100, :a05200,
     :a10100, :a10200,
@@ -81,9 +61,6 @@ const INSTANCES = [
     :e10100, :e10200,
 ]
 
-# ──────────────────────────────────────────────────────────────
-# Loop principal
-# ──────────────────────────────────────────────────────────────
 results = DataFrame(
     instance   = String[],
     n_agents   = Int[],
@@ -92,24 +69,20 @@ results = DataFrame(
     objective  = Float64[],
     lit_lb     = Float64[],
     lit_ub     = Float64[],
-    gap_pct    = Float64[],   # gap relativo (%)
+    gap_pct    = Float64[],  
     time_s     = Float64[],
 )
 
 for inst in INSTANCES
     data = loadAssignmentProblem(inst)
-    if data === nothing
-        @warn "Instância $inst não encontrada, pulando."
-        continue
-    end
 
-    println("Resolvendo $(data.name)  ($(na(data)) agentes × $(nj(data)) jobs)...")
+    println("Resolvendo $(data.name)")
 
     t0 = time()
-    status, obj, bound = solve_gap(data, TIME_LIMIT)
+    status, obj = solve_gap(data, TIME_LIMIT)
     elapsed = time() - t0
 
-    gap = relative_gap(obj, bound, Float64(data.lb))
+    gap = relative_gap(obj, data.ub)
 
     push!(results, (
         string(data.name),
@@ -123,12 +96,9 @@ for inst in INSTANCES
         elapsed,
     ))
 
-    @printf "  → status=%-10s  obj=%-10.1f  gap=%6.2f%%  t=%.1fs\n" status obj gap elapsed
+    @printf " status=%-10s  obj=%-10.1f  gap=%6.2f%%  t=%.1fs\n" status obj gap elapsed
 end
 
-# ──────────────────────────────────────────────────────────────
-# Exporta CSV
-# ──────────────────────────────────────────────────────────────
 out_file = joinpath(@__DIR__, "resultados_gap.csv")
 CSV.write(out_file, results)
 println("\nResultados salvos em: $out_file")
