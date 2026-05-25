@@ -18,8 +18,14 @@ function solve_gap(data::AssignmentProblem, time_limit::Float64)
     @variable(model, x[1:m, 1:n], Bin)
 
     @objective(model, Min, sum(data.costs[i, j] * x[i, j] for i in 1:m, j in 1:n))
-
+    
     # restrições 
+    for i in 1:n
+        @constraint(model, sum(x[j, i] for j in 1:m) = 1)        
+    end
+    for j in 1:m
+        @constraint(model, sum(x[j, i]*data.consumptions[j,i] for i in 1:n) <=  data.capacities[j])        
+    end
 
     optimize!(model)
 
