@@ -56,20 +56,24 @@ function relative_gap(obj, lit_lb, lit_ub, sense::Symbol)
     return (obj - ref) / abs(ref) * 100.0
 end
 
-const INSTANCES = [
-    :d05100, :d05200,
-    :d10100, :d10200,
-    :a05100, :a05200,
-    :a10100, :a10200,
-    :a20100, :a20200,
-    :b05100, :b05200,
-    :b10100, :b10200,
-    :b20100, :b20200,
-    :c05100, :c05200,
-    :c10100, :c10200,
-    :e05100, :e05200,
-    :e10100, :e10200,
-]
+const INSTANCES = nothing  # nothing = todas; ou lista como [:a05100, :b05100]
+
+# const INSTANCES = [
+#     :d05100, :d05200,
+#     :d10100, :d10200,
+#     :a05100, :a05200,
+#     :a10100, :a10200,
+#     :a20100, :a20200,
+#     :b05100, :b05200,
+#     :b10100, :b10200,
+#     :b20100, :b20200,
+#     :c05100, :c05200,
+#     :c10100, :c10200,
+#     :e05100, :e05200,
+#     :e10100, :e10200,
+# ]
+
+const selected_instances = isnothing(INSTANCES) ? Symbol.(instances(AssignmentProblems.Instance)) : INSTANCES
 
 results = DataFrame(
     instance   = String[],
@@ -84,7 +88,7 @@ results = DataFrame(
     time_s     = Float64[],
 )
 
-for inst in INSTANCES, sense in (:Min, :Max)
+for inst in selected_instances, sense in (:Min, :Max)
     data = loadAssignmentProblem(inst, sense)
 
     t0 = time()
